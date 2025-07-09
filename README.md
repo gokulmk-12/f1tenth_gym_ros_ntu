@@ -42,14 +42,14 @@ This is a containerized ROS communication bridge for the F1TENTH gym environment
 ```
 cd sim_ws
 source install/setup.bash
-ros2 launch f1tenth_gym_ros_ntu gym_bridge_launch.py
+ros2 launch f1tenth_gym_ros gym_bridge_launch.py
 ```
 
 ## Terminal 2: Waypoint Marker Script
 ```
 cd sim_ws
 source install/setup.bash
-ros2 run f1tenth_gym_ros_ntu waypoint --ros-args -p map_name:=levine_closed
+ros2 run f1tenth_gym_ros waypoint --ros-args -p map_name:=levine_closed
 ```
 map_name can be anyname from [levine_closed, Austin, Spielberg]. Do turn on the **Marker** in Rviz to visualize the waypoint.
 
@@ -57,6 +57,6 @@ map_name can be anyname from [levine_closed, Austin, Spielberg]. Do turn on the 
 ```
 cd sim_ws
 source install/setup.bash
-ros2 run f1tenth_gym_ros_ntu simple_pp
+ros2 run f1tenth_gym_ros simple_pp
 ```
 The car should now track the waypoint.
