@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+
+import math
+import rclpy
+import numpy as np
+from rclpy.node import Node
+from nav_msgs.msg import Odometry
+from visualization_msgs.msg import Marker
+from ackermann_msgs.msg import AckermannDriveStamped
+from tf_transformations import euler_from_quaternion
+
+class SimplePurePursuit(Node):
+    def __init__(self):
+        super().__init__("simple_pp")
+        self.path = []
+        self.lookAheadDis = 2.0
+        self.wheel_base = 0.3302
+        self.Kp= 1.0
+        self.flag = False
+        self.waypoint_sub = self.create_subscription(Marker, 'waypoints', self.waypoint_callback, 10)
+        self.odom_sub = self.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
+        self.marker_pub = self.create_publisher(Marker, 'start', 10)
+        self.ack_drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
+        self.timer = self.create_timer(1.0, self.timer_callback)
+    
+    def waypoint_callback(self, msg):
+        try:
+            # self.get_logger().info(f"Recieved {len(msg.points)} waypoints ...")
+            for i in range(len(msg.points)):
+                if len(self.path) != len(msg.points):
+                    self.path.append((msg.points[i].x, msg.points[i].y, msg.points[i].z))
+        except Exception as e:
+            print(f"Failed to Recieve Waypoints: {e}")
+    
+    def odom_callback(self, msg):
+        try:
+            # self.get_logger().info(f"Recieved current car pose")
+            self.current_pos = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
+            self.current_heading = euler_from_quaternion([msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w])[2]
+        except Exception as e:
+            print(f"Failed to get current car pose, taking previous: {e}")
+            
+    def timer_callback(self):
+        goalPt, angle = self.run_pp()
+
+        marker = Marker()
+        marker.header.frame_id = "map"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "point"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+
+        marker.scale.x, marker.scale.y, marker.scale.z = 0.1, 0.1, 0.1
+        marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.8, 0.1, 0.0, 1.0
+
+        marker.pose.position.x, marker.pose.position.y, marker.pose.position.z = goalPt[0], goalPt[1], 0.0
+        self.marker_pub.publish(marker)
+
+        drive = AckermannDriveStamped()
+        drive.drive.steering_angle = angle
+        if (abs(angle) > 20.0 / 180.0 * np.pi):
+            drive.drive.speed = 0.5
+        elif (abs(angle) > 10.0 / 180.0 * np.pi):
+            drive.drive.speed = 1.0
+        else:
+            drive.drive.speed = 2.0
+
+        self.ack_drive_pub.publish(drive)
+        self.get_logger().info(f"Vehicle Speed: {drive.drive.speed}")
+    
+    def pt_to_pt_distance(self, pt1, pt2):
+        dist = math.hypot(pt2[0]-pt1[0], pt2[1]-pt1[1])
+        return dist
+    
+    def run_pp(self):
+        currentX, currentY = self.current_pos[0], self.current_pos[1]
+
+        if not self.flag:
+            shortest_dist = np.inf
+            for i in range(0, len(self.path)):
+                if self.pt_to_pt_distance(self.path[i], self.current_pos) < shortest_dist:
+                    shortest_dist = self.pt_to_pt_distance(self.path[i], self.current_pos)
+                    self.lastFoundIndex = i
+            self.flag = True
+        
+        while self.pt_to_pt_distance(self.path[self.lastFoundIndex], self.current_pos) < self.lookAheadDis:
+            self.lastFoundIndex += 1
+            if (self.lastFoundIndex > len(self.path) - 1):
+                self.lastFoundIndex = 0
+        
+        goalPt = [self.path[self.lastFoundIndex][0], self.path[self.lastFoundIndex][1]]
+
+        dx = goalPt[0] - currentX
+        dy = goalPt[1] - currentY
+        goal_heading = math.atan2(dy, dx)
+        
+        sin_alpha = math.sin(goal_heading - self.current_heading)
+        angle = self.Kp * (np.arctan(2.0 * self.wheel_base * sin_alpha)) / self.lookAheadDis
+        return goalPt, angle
+        _
+def main(args=None):
+    rclpy.init(args=args)
+    node = SimplePurePursuit()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
