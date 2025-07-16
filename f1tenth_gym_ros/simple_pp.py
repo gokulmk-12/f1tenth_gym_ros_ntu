@@ -5,6 +5,7 @@ import rclpy
 import numpy as np
 from rclpy.node import Node
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker
 from ackermann_msgs.msg import AckermannDriveStamped
 from tf_transformations import euler_from_quaternion
@@ -15,10 +16,11 @@ class SimplePurePursuit(Node):
         self.path = []
         self.lookAheadDis = 2.0
         self.wheel_base = 0.3302
-        self.Kp= 1.0
+        self.Kp = 1.0
         self.flag = False
         self.waypoint_sub = self.create_subscription(Marker, 'waypoints', self.waypoint_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
+        self.scan_sub = self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
         self.marker_pub = self.create_publisher(Marker, 'start', 10)
         self.ack_drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
         self.timer = self.create_timer(1.0, self.timer_callback)
@@ -39,6 +41,16 @@ class SimplePurePursuit(Node):
             self.current_heading = euler_from_quaternion([msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w])[2]
         except Exception as e:
             print(f"Failed to get current car pose, taking previous: {e}")
+    
+    def scan_callback(self, msg):
+        self.range_min, self.range_max = msg.range_min, msg.range_max
+        self.angle_min, self.angle_max = msg.angle_min, msg.angle_max
+        angles = np.round(np.linspace(self.angle_min, self.angle_max, num=len(msg.ranges)), 2)
+        
+        req_angle_min, req_angle_max = np.deg2rad(-90), np.deg2rad(90)
+        mask = (angles >= req_angle_min) & (angles <= req_angle_max)
+        scan = np.array(msg.ranges)[mask]
+        scan = scan[np.isfinite(scan)]
             
     def timer_callback(self):
         goalPt, angle = self.run_pp()
@@ -59,15 +71,21 @@ class SimplePurePursuit(Node):
 
         drive = AckermannDriveStamped()
         drive.drive.steering_angle = angle
-        if (abs(angle) > 20.0 / 180.0 * np.pi):
-            drive.drive.speed = 0.5
-        elif (abs(angle) > 10.0 / 180.0 * np.pi):
-            drive.drive.speed = 1.0
-        else:
-            drive.drive.speed = 2.0
 
+        lat_forceweight = np.sqrt((0.015 * 9.81 * self.lookAheadDis)/ np.tan(abs(angle)))
+        speed = min(2.0, lat_forceweight)
+
+        # if (abs(angle) > 20.0 / 180.0 * np.pi):
+        #     drive.drive.speed = 0.5
+        # elif (abs(angle) > 10.0 / 180.0 * np.pi):
+        #     drive.drive.speed = 1.0
+        # else:
+        #     drive.drive.speed = 2.0
+        
+        drive.drive.speed = speed
+            
         self.ack_drive_pub.publish(drive)
-        self.get_logger().info(f"Vehicle Speed: {drive.drive.speed}")
+        self.get_logger().info(f"Vehicle Speed: {angle, speed}")
     
     def pt_to_pt_distance(self, pt1, pt2):
         dist = math.hypot(pt2[0]-pt1[0], pt2[1]-pt1[1])

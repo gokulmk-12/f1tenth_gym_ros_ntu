@@ -42,7 +42,7 @@ bridge:
     scan_beams: 1080
 
     # map parameters
-    map_path: '/sim_ws/src/f1tenth_gym_ros/maps/levine'
+    map_path: '/sim_ws/src/f1tenth_gym_ros/maps/levine_closed'
     map_img_ext: '.png'
 
     # opponent parameters
@@ -60,3 +60,17 @@ bridge:
 
     # teleop
     kb_teleop: True
+  
+    steering_min: -0.34
+    steering_max: 0.34
+    speed_min: 0.0
+    speed_max: 5.0
+
+    lidar_reduction_method: 'avg'
+    reduce_lidar_data: 27
+    max_distance_norm: 20
+
+    vel_norm: 0.3
+    vel_reward_scale: 0.09
+    current_lidar_reward_scale: 0.01
+    previous_lidar_reward_scale: 0.001

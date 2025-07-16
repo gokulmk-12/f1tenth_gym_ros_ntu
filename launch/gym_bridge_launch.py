@@ -38,6 +38,8 @@ def generate_launch_description():
     has_opp = config_dict['bridge']['ros__parameters']['num_agent'] > 1
     teleop = config_dict['bridge']['ros__parameters']['kb_teleop']
 
+    print(config)
+
     bridge_node = Node(
         package='f1tenth_gym_ros',
         executable='gym_bridge',
