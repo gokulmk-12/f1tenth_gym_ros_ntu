@@ -47,11 +47,11 @@ def test():
 
     for ep in range(1, total_test_episodes+1):
         ep_reward = 0
-        state, _ = env.reset()
+        state = env.reset()
 
         for t in range(1, max_ep_len+1):
             action = ppo_agent.select_action(state)
-            state, reward, done, _, _ = env.step(action)
+            state, reward, done, _ = env.step(action)
             ep_reward += reward
 
             if done:

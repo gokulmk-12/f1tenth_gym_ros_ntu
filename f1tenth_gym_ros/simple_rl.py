@@ -1,8 +1,10 @@
+import os
 import gym
 import yaml
 import rclpy
 import gym.spaces
 import numpy as np
+import pandas as pd
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
@@ -51,6 +53,7 @@ class F110Gym(gym.Env):
 
         self.node.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
         self.node.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
+        self.steps_until_next_pose = 0
 
     def odom_callback(self, msg):
         try:
@@ -102,13 +105,27 @@ class F110Gym(gym.Env):
                 ])
         return obs
     
+    def _sample_new_pose(self):
+        new_pose = [
+            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            [5.1, 0.0, 0.0, 0.0, 0.0, 1.0], 
+            [9.75, 4.63, 0.0, 0.0, 0.7, 0.714],
+            [-0.84, 8.873, 0.0, 0.0, 0.9997, 0.02419],
+            [-13.85, 6.105, 0.0, 0.0, 0.6077, -0.7941]
+        ]
+        idx = np.random.randint(low=0, high=len(new_pose))
+        print(f"Setting New Pose: {new_pose[idx][0], new_pose[idx][1]}")
+        self.config['sx'], self.config['sy'], self.config['ori_z'], self.config['ori_w'] = new_pose[idx][0], new_pose[idx][1], new_pose[idx][4], new_pose[idx][5]
+    
     def reset(self):
         msg = PoseWithCovarianceStamped()
         sx, sy, yaw = self.config['sx'], self.config['sy'], 0.0
+        _, _, yaw = euler_from_quaternion([0.0, 0.0, self.config['ori_z'], self.config['ori_w']])
         self.pose = np.array([sx, sy, yaw])
         msg.pose.pose.position.x = sx
         msg.pose.pose.position.y = sy
-        msg.pose.pose.orientation.w = 1.0
+        msg.pose.pose.orientation.z = self.config['ori_z']
+        msg.pose.pose.orientation.w = self.config['ori_w']
         self.reset_pub.publish(msg)
 
         drive = AckermannDriveStamped()
@@ -147,6 +164,10 @@ class F110Gym(gym.Env):
             rclpy.spin_once(self.node, timeout_sec=0.01)
         
         self.info["step"] += 1
+        self.steps_until_next_pose += 1
+
+        if self.steps_until_next_pose % 100000 == 0:
+            self._sample_new_pose()
         
         obs = self._get_obs(self.info, self.speed)
         done = self._get_termination(self.info)
