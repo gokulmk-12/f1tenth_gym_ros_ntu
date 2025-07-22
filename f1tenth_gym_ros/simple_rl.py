@@ -1,10 +1,12 @@
 import gym
+import csv
 import math
 import yaml
 import rclpy
 import gym.spaces
 import numpy as np
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Point
 from sensor_msgs.msg import LaserScan
 from visualization_msgs.msg import Marker
 from ackermann_msgs.msg import AckermannDriveStamped
@@ -27,7 +29,6 @@ class F110Gym(gym.Env):
         self.lidar_dim = self.config['reduce_lidar_data']
         self.laser = np.zeros(self.lidar_dim)
         self.speed = np.zeros(3)
-        self.path = []
         self.lookAheadDis = 2.0
         self.wheel_base = 0.3302
         self.Kp = 1.0
@@ -53,13 +54,31 @@ class F110Gym(gym.Env):
         self.drive_pub = self.node.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.reset_pub = self.node.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
 
-        self.laser_event, self.odom_event, self.waypoint_event = Event(), Event(), Event()
+        self.laser_event, self.odom_event = Event(), Event()
         self.info = {}
+        map_name = "levine_closed"
+        self.csv_file = f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}.csv"
+        self.points = self.load_points_from_csv(self.csv_file)
 
         self.node.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
         self.node.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
-        self.node.create_subscription(Marker, 'waypoints', self.waypoint_callback, 10)
+        # self.waypoint_pub = self.node.create_publisher(Marker, 'waypoints', 10)
+        # self.timer = self.node.create_timer(1.0, self.timer_callback)
         self.steps_until_next_pose = 0
+    
+    def load_points_from_csv(self, file_path):
+        points = []
+
+        try:
+            with open(file_path, 'r') as csvfile:
+                file = csv.reader(csvfile)
+                for row in file:
+                    x, y = float(row[0]), float(row[1])
+                    points.append((x, y))
+        except Exception as e:
+            self.node.get_logger().error(f"Error reading CSV: {e}")
+
+        return points
 
     def odom_callback(self, msg):
         try:
@@ -83,16 +102,22 @@ class F110Gym(gym.Env):
         
         self.laser_event.set()
     
-    def waypoint_callback(self, msg):
-        try:
-            # self.get_logger().info(f"Recieved {len(msg.points)} waypoints ...")
-            for i in range(len(msg.points)):
-                if len(self.path) != len(msg.points):
-                    self.path.append((msg.points[i].x, msg.points[i].y, msg.points[i].z))
-            
-            self.waypoint_event.set()
-        except Exception as e:
-            print(f"Failed to Recieve Waypoints: {e}")
+    # def timer_callback(self):
+    #     marker = Marker()
+    #     marker.header.frame_id = "map"
+    #     marker.header.stamp = self.node.get_clock().now().to_msg()
+    #     marker.ns = "points"
+    #     marker.id = 0
+    #     marker.type = Marker.SPHERE_LIST
+    #     marker.action = Marker.ADD
+
+    #     marker.scale.x, marker.scale.y, marker.scale.z = 0.08, 0.08, 0.08
+    #     marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.0, 0.8, 0.1, 1.0
+
+    #     marker.points = [Point(x=pt[0], y=pt[1], z=0.0) for pt in self.points]
+
+    #     self.waypoint_pub.publish(marker)
+        # self.get_logger().info(f"Published {len(marker.points)} points as markers.")
 
     def process_lidar(self, scan):
         max_distance= self.config['max_distance_norm']
@@ -131,18 +156,18 @@ class F110Gym(gym.Env):
 
         if not self.flag:
             shortest_dist = np.inf
-            for i in range(0, len(self.path)):
-                if self.pt_to_pt_distance(self.path[i], self.current_pos) < shortest_dist:
-                    shortest_dist = self.pt_to_pt_distance(self.path[i], self.current_pos)
+            for i in range(0, len(self.points)):
+                if self.pt_to_pt_distance(self.points[i], self.current_pos) < shortest_dist:
+                    shortest_dist = self.pt_to_pt_distance(self.points[i], self.current_pos)
                     self.lastFoundIndex = i
             self.flag = True
         
-        while self.pt_to_pt_distance(self.path[self.lastFoundIndex], self.current_pos) < self.lookAheadDis:
+        while self.pt_to_pt_distance(self.points[self.lastFoundIndex], self.current_pos) < self.lookAheadDis:
             self.lastFoundIndex += 1
-            if (self.lastFoundIndex > len(self.path) - 1):
+            if (self.lastFoundIndex > len(self.points) - 1):
                 self.lastFoundIndex = 0
         
-        goalPt = [self.path[self.lastFoundIndex][0], self.path[self.lastFoundIndex][1]]
+        goalPt = [self.points[self.lastFoundIndex][0], self.points[self.lastFoundIndex][1]]
 
         dx = goalPt[0] - currentX
         dy = goalPt[1] - currentY
@@ -183,9 +208,8 @@ class F110Gym(gym.Env):
 
         self.laser_event.clear()
         self.odom_event.clear()
-        self.waypoint_event.clear()
 
-        while not (self.laser_event.is_set() and self.odom_event.is_set() and self.waypoint_event.is_set()):
+        while not (self.laser_event.is_set() and self.odom_event.is_set()):
             rclpy.spin_once(self.node, timeout_sec=0.01)
         
         self.info = {
@@ -194,6 +218,8 @@ class F110Gym(gym.Env):
             "speed": self.speed,
             "last_scan": self.laser.copy(),
             "current_scan": self.laser.copy(),
+            "last_action": self.speed.copy(),
+            "current_action": self.speed.copy(),
         }
 
         self.flag = False
@@ -203,13 +229,11 @@ class F110Gym(gym.Env):
     def step(self, action):
         self.laser_event.clear()
         self.odom_event.clear()
-        self.waypoint_event.clear()
 
         goalPt, angle = self.run_pp()
         lat_forceweight = np.sqrt((0.015 * 9.81 * self.lookAheadDis)/ np.tan(abs(angle)))
         base_speed = min(2.0, lat_forceweight)
         final_speed = base_speed * (1 + action[1])
-        print(f"Action found: {base_speed}, Action Taken: {final_speed}")
 
         drive = AckermannDriveStamped()
         drive.drive.steering_angle = float(action[0] + angle)
@@ -221,6 +245,8 @@ class F110Gym(gym.Env):
         
         self.info["step"] += 1
         self.steps_until_next_pose += 1
+        self.info["last_action"] = self.info["current_action"]
+        self.info["current_action"] = np.array(action)
 
         if self.steps_until_next_pose % 50000 == 0:
             self._sample_new_pose()
@@ -228,7 +254,7 @@ class F110Gym(gym.Env):
         obs = self._get_obs(self.info, self.speed)
         done = self._get_termination(self.info)
         rewards = self._get_reward(self.info, done)
-        reward = np.clip(sum(rewards.values()), -1, 1)
+        reward = sum(rewards.values())
 
         return obs, reward, done, {}
     
@@ -236,7 +262,8 @@ class F110Gym(gym.Env):
         return {
             'linvel_reward': info["speed"][0] * self.config['vel_norm'] * self.config['vel_reward_scale'],
             'current_laser_reward': min(list(info['current_scan'])) * self.config['current_lidar_reward_scale'],
-            'termination': -1 if done else 0
+            'termination': -1 if done else 0,
+            'smoothness': -self.config["smoothness_scale"] * np.sum(np.square(self.info["current_action"] - self.info["last_action"]))
         }
     
     def _get_termination(self, info):

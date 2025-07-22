@@ -6,10 +6,11 @@ from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 
 from f1tenth_gym_ros.simple_rl import F110Gym
 
-log_dir = "logs/PPO_F1Tenth"
+log_dir = "logs/PPO_F1Tenth_3"
 os.makedirs(log_dir, exist_ok=True)
 
 env = F110Gym()
+env.reset()
 
 new_logger = configure(log_dir, ["stdout", "tensorboard"])
 
@@ -22,18 +23,17 @@ model = PPO(
 )
 model.set_logger(new_logger)
 
-checkpoint_callback = CheckpointCallback(
-    save_freq=10_000,
-    save_path=os.path.join(log_dir, "checkpoints"),
-    name_prefix="ppo_f1tenth_checkpoint",
-)
+# checkpoint_callback = CheckpointCallback(
+#     save_freq=100_000,
+#     save_path=os.path.join(log_dir, "checkpoints"),
+#     name_prefix="ppo_f1tenth_checkpoint",
+# )
 
-callback = CallbackList([checkpoint_callback])
+# callback = CallbackList([checkpoint_callback])
 
 model.learn(
     total_timesteps=2_000_000,
-    callback=callback,
-    progress_bar=True
+    progress_bar=True,
 )
 
 model.save(os.path.join(log_dir, "ppo_f1tenth_final"))

@@ -66,13 +66,14 @@ bridge:
     steering_min: -0.175 
     steering_max: 0.175
     speed_min: -0.5
-    speed_max: 2.5
+    speed_max: 2.0
 
     lidar_reduction_method: 'avg'
     reduce_lidar_data: 27
     max_distance_norm: 20
 
-    vel_norm: 0.5
+    vel_norm: 0.3
     vel_reward_scale: 0.09
+    smoothness_scale: 0.05
     current_lidar_reward_scale: 0.01
     previous_lidar_reward_scale: 0.001

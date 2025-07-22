@@ -38,7 +38,7 @@ checkpoint_callback = CheckpointCallback(
 callback = CallbackList([checkpoint_callback])
 
 model.learn(
-    total_timesteps=2_000_000_000,
+    total_timesteps=5_000_000,
     callback=callback,
     progress_bar=True
 )
