@@ -11,6 +11,7 @@ log_dir = f"logs/PPO_F1Tenth_Exp{exp_no}"
 os.makedirs(log_dir, exist_ok=True)
 
 env = F110Gym()
+env.reset()
 
 new_logger = configure(log_dir, ["stdout", "tensorboard"])
 

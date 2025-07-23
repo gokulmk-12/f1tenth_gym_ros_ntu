@@ -6,6 +6,7 @@ import rclpy
 import gym.spaces
 import numpy as np
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Point
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
 from tf_transformations import euler_from_quaternion
@@ -54,7 +55,7 @@ class F110Gym(gym.Env):
         self.drive_pub = self.node.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.reset_pub = self.node.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
 
-        self.laser_event, self.odom_event, self.waypoint_event = Event(), Event(), Event()
+        self.laser_event, self.odom_event = Event(), Event()
         self.info = {}
         map_name = "levine_closed"
         self.csv_file = f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}.csv"
@@ -63,20 +64,6 @@ class F110Gym(gym.Env):
         self.node.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
         self.node.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
         self.steps_until_next_pose = 0
-    
-    def load_points_from_csv(self, file_path):
-        points = []
-
-        try:
-            with open(file_path, 'r') as csvfile:
-                file = csv.reader(csvfile)
-                for row in file:
-                    x, y = float(row[0]), float(row[1])
-                    points.append((x, y))
-        except Exception as e:
-            self.node.get_logger().error(f"Error reading CSV: {e}")
-
-        return points
 
     def odom_callback(self, msg):
         try:
@@ -145,7 +132,7 @@ class F110Gym(gym.Env):
         
         while self.pt_to_pt_distance(self.points[self.lastFoundIndex], self.current_pos) < (self.lookAheadDis + dlookahead):
             self.lastFoundIndex += 1
-            if (self.lastFoundIndex > len(self.points) - 1):
+            if (self.lastFoundIndex > len(self.path) - 1):
                 self.lastFoundIndex = 0
         
         goalPt = [self.points[self.lastFoundIndex][0], self.points[self.lastFoundIndex][1]]
@@ -236,7 +223,7 @@ class F110Gym(gym.Env):
         obs = self._get_obs(self.info, self.speed)
         done = self._get_termination(self.info)
         rewards = self._get_reward(self.info, done)
-        reward = np.clip(sum(rewards.values()), -1, 1)
+        reward = sum(rewards.values())
 
         return obs, reward, done, {}
     
