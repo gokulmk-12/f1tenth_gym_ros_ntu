@@ -6,33 +6,31 @@ from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 
 from f1tenth_gym_ros.simple_rl import F110Gym
 
-log_dir = "logs/PPO_F1Tenth"
+exp_no = 3
+log_dir = f"logs/PPO_F1Tenth_Exp{exp_no}"
 os.makedirs(log_dir, exist_ok=True)
 
 env = F110Gym()
 
 new_logger = configure(log_dir, ["stdout", "tensorboard"])
 
-model = PPO(
-    "MlpPolicy",
-    env,
-    verbose=0,
-    tensorboard_log=log_dir,
-    device="cuda" if torch.cuda.is_available() else "cpu"
-)
+weights_path = os.path.join(log_dir, "ppo_f1tenth_final.zip")
+if os.path.exists(weights_path):
+    print(f"Loading model from {weights_path}")
+    model = PPO.load(weights_path, env=env, device="cuda" if torch.cuda.is_available() else "cpu")
+else:
+    print("No saved model found, initializing new PPO model")
+    model = PPO(
+        "MlpPolicy",
+        env,
+        verbose=0,
+        tensorboard_log=log_dir,
+        device="cuda" if torch.cuda.is_available() else "cpu"
+    )
 model.set_logger(new_logger)
-
-checkpoint_callback = CheckpointCallback(
-    save_freq=10_000,
-    save_path=os.path.join(log_dir, "checkpoints"),
-    name_prefix="ppo_f1tenth_checkpoint",
-)
-
-callback = CallbackList([checkpoint_callback])
 
 model.learn(
     total_timesteps=2_000_000,
-    callback=callback,
     progress_bar=True
 )
 

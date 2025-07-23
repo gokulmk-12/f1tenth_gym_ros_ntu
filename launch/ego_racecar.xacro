@@ -48,6 +48,14 @@
     </visual>
   </link>
 
+  <link name="${car_name}/imu_link"></link>
+  
+  <joint name="base_to_imu" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <parent link="${car_name}/base_link"/> 
+    <child link="${car_name}/imu_link"/>
+  </joint>
+
   <joint name="$base_to_back_left_wheel" type="fixed">
     <parent link="${car_name}/base_link"/>
     <child link="${car_name}/back_left_wheel"/>

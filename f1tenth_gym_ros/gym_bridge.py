@@ -47,6 +47,7 @@ class GymBridge(Node):
         self.declare_parameter('ego_opp_odom_topic')
         self.declare_parameter('ego_scan_topic')
         self.declare_parameter('ego_drive_topic')
+        self.declare_parameter('ego_imu_topic')
         self.declare_parameter('opp_namespace')
         self.declare_parameter('opp_odom_topic')
         self.declare_parameter('opp_ego_odom_topic')
@@ -89,6 +90,7 @@ class GymBridge(Node):
         self.ego_collision = False
         ego_scan_topic = self.get_parameter('ego_scan_topic').value
         ego_drive_topic = self.get_parameter('ego_drive_topic').value
+        ego_imu_topic = self.get_parameter('ego_imu_topic').value
         scan_fov = self.get_parameter('scan_fov').value
         scan_beams = self.get_parameter('scan_beams').value
         self.angle_min = -scan_fov / 2.

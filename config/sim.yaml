@@ -26,6 +26,7 @@ bridge:
     ego_namespace: 'ego_racecar'
     ego_scan_topic: 'scan'
     ego_odom_topic: 'odom'
+    ego_imu_topic: 'imu'
     ego_opp_odom_topic: 'opp_odom'
     ego_drive_topic: 'drive'
     opp_namespace: 'opp_racecar'
@@ -63,16 +64,19 @@ bridge:
     # teleop
     kb_teleop: True
     #residual RL setting
-    steering_min: -0.175 
-    steering_max: 0.175
+    steering_min: -0.0875
+    steering_max: 0.0875
+    lookahead_min: -1.0
+    lookahead_max: 2.0
     speed_min: -0.5
-    speed_max: 2.5
+    speed_max: 2.0
 
     lidar_reduction_method: 'avg'
     reduce_lidar_data: 27
     max_distance_norm: 20
 
-    vel_norm: 0.5
+    vel_norm: 0.3
     vel_reward_scale: 0.09
+    smoothness_scale: 0.07
     current_lidar_reward_scale: 0.01
     previous_lidar_reward_scale: 0.001
