@@ -3,23 +3,27 @@ import csv
 import time
 import torch
 
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC
 from f1tenth_gym_ros.simple_rl import F110Gym
 
 env = F110Gym()
 obs = env.reset()
 
-exp_no = 2
-model_path = f"logs/PPO_F1Tenth_Exp{exp_no}/ppo_f1tenth_final"
-model = PPO.load(model_path, env=env, device="cuda" if torch.cuda.is_available() else "cpu")
+exp_no = 3
+algo = "PPO"
+model_path = f"logs/{algo}_F1Tenth_Exp{exp_no}/{algo.lower()}_f1tenth_final"
+if algo == "PPO":
+    model = PPO.load(model_path, env=env, device="cuda" if torch.cuda.is_available() else "cpu")
+elif algo == "SAC":
+    model = SAC.load(model_path, env=env, device="cuda" if torch.cuda.is_available() else "cpu")
 
 done = False
 positions = []
 total_reward = 0.0
 
-log_dir = "src/f1tenth_gym_ros/race_logs"
+log_dir = "race_logs"
 os.makedirs(log_dir, exist_ok=True)
-log_file_path = os.path.join(log_dir, f"race_log_rl.csv")
+log_file_path = os.path.join(log_dir, f"race_log_rl_levine_ppo_2.csv")
 
 with open(log_file_path, 'w', newline='') as f:
     writer = csv.writer(f)

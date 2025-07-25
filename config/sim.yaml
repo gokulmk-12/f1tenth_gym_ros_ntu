@@ -76,6 +76,7 @@ bridge:
     max_distance_norm: 20
 
     vel_norm: 0.3
+    lateral_deviation: 0.3
     vel_reward_scale: 0.09
     smoothness_scale: 0.07
     current_lidar_reward_scale: 0.01

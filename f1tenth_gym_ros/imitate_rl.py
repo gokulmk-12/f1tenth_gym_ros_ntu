@@ -35,15 +35,9 @@ class F110Gym(gym.Env):
         self.action_space = gym.spaces.Box(
             low=np.array([
                 self.config['steering_min'],
-                # self.config['lookahead_min'],
-                self.config['speed_min'],
-                # self.config['lookahead_min']
             ]),
             high=np.array([
                 self.config['steering_max'], 
-                # self.config['lookahead_max'],
-                self.config['speed_max'],
-                # self.config['lookahead_max']
             ]),
             dtype=np.float64
         )
@@ -72,8 +66,8 @@ class F110Gym(gym.Env):
             with open(file_path, 'r') as csvfile:
                 file = csv.reader(csvfile)
                 for row in file:
-                    x, y = float(row[0]), float(row[1])
-                    points.append((x, y))
+                    x, y, v = float(row[0]), float(row[1]), float(row[2])
+                    points.append((x, y, v))
         except Exception as e:
             self.node.get_logger().error(f"Error reading CSV: {e}")
 
@@ -133,7 +127,7 @@ class F110Gym(gym.Env):
         dist = math.hypot(pt2[0]-pt1[0], pt2[1]-pt1[1])
         return dist
     
-    def run_pp(self, dlookahead=0):
+    def run_pp(self):
         currentX, currentY = self.current_pos[0], self.current_pos[1]
 
         if not self.flag:
@@ -144,34 +138,44 @@ class F110Gym(gym.Env):
                     self.lastFoundIndex = i
             self.flag = True
         
-        while self.pt_to_pt_distance(self.points[self.lastFoundIndex], self.current_pos) < (self.lookAheadDis + dlookahead):
+        while self.pt_to_pt_distance(self.points[self.lastFoundIndex], self.current_pos) < self.lookAheadDis:
             self.lastFoundIndex += 1
             if (self.lastFoundIndex > len(self.points) - 1):
                 self.lastFoundIndex = 0
         
-        goalPt = [self.points[self.lastFoundIndex][0], self.points[self.lastFoundIndex][1]]
-
+        goalPt = self.points[self.lastFoundIndex]
         dx = goalPt[0] - currentX
         dy = goalPt[1] - currentY
         goal_heading = math.atan2(dy, dx)
         
         sin_alpha = math.sin(goal_heading - self.current_heading)
-        angle = self.Kp * (np.arctan(2.0 * self.wheel_base * sin_alpha)) / (self.lookAheadDis + dlookahead)
+        angle = self.Kp * (np.arctan(2.0 * self.wheel_base * sin_alpha)) / self.lookAheadDis
         return goalPt, angle
     
-    def _sample_new_pose(self):
-        new_pose = [
-            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-            # [5.0, 0.0, 0.0, 0.0, 0.0, 1.0], 
-            [9.75, 4.63, 0.0, 0.0, 0.7, 0.714],
-            # [5.73, 8.86, 0.0, 0.0, 0.9999, 0.009],
-            [-0.107, 8.97, 0.0, 0.0, 0.9999, 0.009],
-            [-8.768, 8.697, 0.0, 0.0, 0.9998, -0.017],
-            # [-13.768, 4.3916, 0.0, 0.0, 0.7103, -0.704]
-        ]
-        idx = np.random.randint(low=0, high=len(new_pose))
-        print(f"Setting New Pose: {new_pose[idx][0], new_pose[idx][1]}")
-        self.config['sx'], self.config['sy'], self.config['ori_z'], self.config['ori_w'] = new_pose[idx][0], new_pose[idx][1], new_pose[idx][4], new_pose[idx][5]
+    def compute_lateral_deviation(self, position):
+        x, y = position
+        min_dist = np.float('inf')
+
+        for i in range(len(self.points) - 1):
+            x1, y1 = self.points[i][:2]
+            x2, y2 = self.points[i+1][:2]
+
+            dx, dy = x2 - x1, y2 - y1
+            if dx == 0 and dy == 0:
+                continue
+
+            t = ((x - x1)*dx + (y - y1)*dy) / (dx**2 + dy**2)
+            t = np.clip(t, 0.0, 1.0)
+
+            proj_x = x1 + t * dx
+            proj_y = y1 + t * dy
+
+            dist = math.hypot(proj_x - x, proj_y - y)
+
+            if dist < min_dist:
+                min_dist = dist
+        
+        return min_dist
     
     def reset(self):
         msg = PoseWithCovarianceStamped()
@@ -192,7 +196,7 @@ class F110Gym(gym.Env):
 
         self.laser_event.clear()
         self.odom_event.clear()
-        self.action = [0., 0.]
+        self.action = 0.0
 
         while not (self.laser_event.is_set() and self.odom_event.is_set()):
             rclpy.spin_once(self.node, timeout_sec=0.01)
@@ -203,8 +207,8 @@ class F110Gym(gym.Env):
             "speed": self.speed,
             "last_scan": self.laser.copy(),
             "current_scan": self.laser.copy(),
-            "last_action": self.action.copy(),
-            "current_action": self.action.copy(),
+            "last_action": self.action,
+            "current_action": self.action,
         }
 
         self.flag = False
@@ -215,17 +219,13 @@ class F110Gym(gym.Env):
         self.laser_event.clear()
         self.odom_event.clear()
 
-        goalPt, angle = self.run_pp(action[0])
-        lat_forceweight = np.sqrt((0.015 * 9.81 * (self.lookAheadDis))/ np.tan(abs(angle)))
-        base_speed = min(2.0, lat_forceweight)
-        final_speed = base_speed * (1 + action[1])
+        goalPt, angle = self.run_pp()
+        final_speed = goalPt[2] 
 
         drive = AckermannDriveStamped()
-        drive.drive.steering_angle = float(angle)
+        drive.drive.steering_angle = float(angle + action)
         drive.drive.speed = float(final_speed)
         self.drive_pub.publish(drive)
-
-        print(f"Racecar Speed: {final_speed}")
 
         while not (self.laser_event.is_set() and self.odom_event.is_set()):
             rclpy.spin_once(self.node, timeout_sec=0.01)
@@ -234,24 +234,16 @@ class F110Gym(gym.Env):
         self.steps_until_next_pose += 1
         self.info["last_action"] = self.info["current_action"]
         self.info["current_action"] = np.array(action)
-
-        if self.steps_until_next_pose % 10000 == 0:
-            self._sample_new_pose()
         
         obs = self._get_obs(self.info, self.speed)
         done = self._get_termination(self.info)
 
-        if self.info["step"] > 1000:
-            # print("Max episode length reached. Forcing reset.")
-            done = False
-
-        # print(f"[DEBUG] step: {self.info['step']}, angle: {angle:.2f}, base_speed: {base_speed:.2f}, final_speed: {final_speed:.2f}")
         reward = sum(self._get_reward(self.info, done).values())
         return obs, reward, done, {}
     
     def _get_reward(self, info, done):
         return {
-            'linvel_reward': info["speed"][0] * self.config['vel_norm'] * self.config['vel_reward_scale'],
+            'lateral_deviation': -self.compute_lateral_deviation(self.pose[:2]) * self.config['lateral_deviation'],
             'current_laser_reward': min(list(info['current_scan'])) * self.config['current_lidar_reward_scale'],
             'termination': -1 if done else 0,
             'smoothness': -self.config["smoothness_scale"] * np.sum(np.square(self.info["current_action"] - self.info["last_action"]))
@@ -259,7 +251,6 @@ class F110Gym(gym.Env):
     
     def _get_termination(self, info):
         current_scan_termination = np.min(info['current_scan']) < 0.012
-        previous_scan_termination = np.min(info['last_scan']) < 0.015
         return current_scan_termination
     
     def close(self):
@@ -272,7 +263,7 @@ if __name__ == "__main__":
     obs = sim.reset()
 
     while True:
-        action = np.zeros(2)
+        action = np.zeros(1)
         obs, reward, done, _ = sim.step(action)
         if done:
             obs = sim.reset()

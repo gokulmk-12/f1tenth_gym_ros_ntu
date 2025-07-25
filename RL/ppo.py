@@ -2,12 +2,11 @@ import os
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.logger import configure
-from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 
-from f1tenth_gym_ros.simple_rl import F110Gym
+from f1tenth_gym_ros.imitate_rl import F110Gym
 
-exp_no = 3
-log_dir = f"logs/PPO_F1Tenth_Exp{exp_no}"
+exp_no = 1
+log_dir = f"logs/PPO_F1Tenth_Exp{exp_no}_imitate"
 os.makedirs(log_dir, exist_ok=True)
 
 env = F110Gym()
@@ -31,7 +30,7 @@ else:
 model.set_logger(new_logger)
 
 model.learn(
-    total_timesteps=2_000_000,
+    total_timesteps=5_000_000,
     progress_bar=True
 )
 
