@@ -17,7 +17,7 @@ class WaypointPublisher(Node):
         self.declare_parameter("map_name", "Spielberg")  # Default: Spielberg
         map_name = self.get_parameter("map_name").get_parameter_value().string_value
 
-        self.csv_file = f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}_mincurv.csv"
+        self.csv_file = f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}.csv"
         self.config = f"/sim_ws/src/f1tenth_gym_ros/maps/{map_name}.yaml"
         self.points = self.load_points_from_csv(self.csv_file)
     

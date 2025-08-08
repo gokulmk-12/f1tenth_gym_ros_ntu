@@ -29,6 +29,7 @@ setup(
             'gym_bridge = f1tenth_gym_ros.gym_bridge:main',
             'waypoint = f1tenth_gym_ros.markers:main',
             'simple_pp = f1tenth_gym_ros.simple_pp:main',
+            'logger = f1tenth_gym_ros.logger:main',
         ],
     },
 )

@@ -37,7 +37,7 @@ class F110Gym(gym.Env):
                 self.config['steering_min'],
             ]),
             high=np.array([
-                self.config['steering_max'], 
+                self.config['steering_max'],
             ]),
             dtype=np.float64
         )
@@ -127,7 +127,7 @@ class F110Gym(gym.Env):
         dist = math.hypot(pt2[0]-pt1[0], pt2[1]-pt1[1])
         return dist
     
-    def run_pp(self):
+    def run_pp(self, dlookAhead=0):
         currentX, currentY = self.current_pos[0], self.current_pos[1]
 
         if not self.flag:
@@ -138,7 +138,7 @@ class F110Gym(gym.Env):
                     self.lastFoundIndex = i
             self.flag = True
         
-        while self.pt_to_pt_distance(self.points[self.lastFoundIndex], self.current_pos) < self.lookAheadDis:
+        while self.pt_to_pt_distance(self.points[self.lastFoundIndex], self.current_pos) < (self.lookAheadDis + dlookAhead):
             self.lastFoundIndex += 1
             if (self.lastFoundIndex > len(self.points) - 1):
                 self.lastFoundIndex = 0
@@ -149,12 +149,12 @@ class F110Gym(gym.Env):
         goal_heading = math.atan2(dy, dx)
         
         sin_alpha = math.sin(goal_heading - self.current_heading)
-        angle = self.Kp * (np.arctan(2.0 * self.wheel_base * sin_alpha)) / self.lookAheadDis
+        angle = self.Kp * (np.arctan(2.0 * self.wheel_base * sin_alpha)) / (self.lookAheadDis + dlookAhead)
         return goalPt, angle
     
     def compute_lateral_deviation(self, position):
         x, y = position
-        min_dist = np.float('inf')
+        min_dist = float('inf')
 
         for i in range(len(self.points) - 1):
             x1, y1 = self.points[i][:2]
@@ -219,11 +219,11 @@ class F110Gym(gym.Env):
         self.laser_event.clear()
         self.odom_event.clear()
 
-        goalPt, angle = self.run_pp()
+        goalPt, _ = self.run_pp()
         final_speed = goalPt[2] 
 
         drive = AckermannDriveStamped()
-        drive.drive.steering_angle = float(angle + action)
+        drive.drive.steering_angle = float(action)
         drive.drive.speed = float(final_speed)
         self.drive_pub.publish(drive)
 

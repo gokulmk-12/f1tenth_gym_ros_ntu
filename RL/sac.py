@@ -5,16 +5,19 @@ from stable_baselines3.common.logger import configure
 
 from f1tenth_gym_ros.simple_rl import F110Gym
 
-exp_no = 3
-log_dir = f"logs/SAC_F1Tenth_Exp{exp_no}"
+exp_no = 2
+exp_name = "obs_logs"
+prev_obstacle_type, obstacle_type="static_obstacles", "no_obstacles"
+prev_log_dir = f"logs/{exp_name}/SAC_F1Tenth_Exp{exp_no}/{prev_obstacle_type}1"
+log_dir = f"logs/{exp_name}/SAC_F1Tenth_Exp{exp_no}/{obstacle_type}"
 os.makedirs(log_dir, exist_ok=True)
 
-env = F110Gym()
+env = F110Gym(is_opp=False)
 env.reset()
 
 new_logger = configure(log_dir, ["stdout", "tensorboard"])
 
-weights_path = os.path.join(log_dir, "sac_f1tenth_final.zip")
+weights_path = os.path.join(prev_log_dir, "sac_f1tenth_final.zip")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 if os.path.exists(weights_path):
@@ -28,7 +31,7 @@ else:
         verbose=0,
         tensorboard_log=log_dir,
         device=device,
-        learning_rate=5e-4,
+        learning_rate=3e-4,
         buffer_size=1_000_000,
         batch_size=256,
         train_freq=1,
@@ -39,7 +42,7 @@ else:
 model.set_logger(new_logger)
 
 model.learn(
-    total_timesteps=20_00_000,
+    total_timesteps=500_000,
     progress_bar=True
 )
 

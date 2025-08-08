@@ -2,7 +2,6 @@ import os
 import csv
 import rclpy
 from rclpy.node import Node
-from datetime import datetime
 from nav_msgs.msg import Odometry
 
 class Logger(Node):
@@ -13,8 +12,8 @@ class Logger(Node):
         
         log_dir = "src/f1tenth_gym_ros/race_logs"
         os.makedirs(log_dir, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file_path = os.path.join(log_dir, f"race_log_{timestamp}.csv")
+        map_name = "levine_closed"
+        self.log_file_path = os.path.join(log_dir, f"race_log_{map_name}_pp.csv")
 
         with open(self.log_file_path, 'w', newline='') as f:
             writer = csv.writer(f)

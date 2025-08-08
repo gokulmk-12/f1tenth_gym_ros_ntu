@@ -3,10 +3,11 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.logger import configure
 
-from f1tenth_gym_ros.imitate_rl import F110Gym
+from f1tenth_gym_ros.simple_rl import F110Gym
 
 exp_no = 1
-log_dir = f"logs/PPO_F1Tenth_Exp{exp_no}_imitate"
+exp_name = "obs_logs"
+log_dir = f"logs/{exp_name}/PPO_F1Tenth_Exp{exp_no}"
 os.makedirs(log_dir, exist_ok=True)
 
 env = F110Gym()
@@ -25,12 +26,17 @@ else:
         env,
         verbose=0,
         tensorboard_log=log_dir,
+        learning_rate=3e-4,
+        batch_size=256,
+        ent_coef=0.02,
+        max_grad_norm=1.0,
+        use_sde=False,
         device="cuda" if torch.cuda.is_available() else "cpu"
     )
 model.set_logger(new_logger)
 
 model.learn(
-    total_timesteps=5_000_000,
+    total_timesteps=500_000,
     progress_bar=True
 )
 

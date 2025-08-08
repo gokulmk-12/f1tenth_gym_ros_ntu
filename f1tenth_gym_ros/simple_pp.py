@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import csv
 import math
 import rclpy
 import numpy as np
@@ -13,26 +14,33 @@ from tf_transformations import euler_from_quaternion
 class SimplePurePursuit(Node):
     def __init__(self):
         super().__init__("simple_pp")
-        self.path = []
-        self.lookAheadDis = 2.0
+        self.lookAheadDis = 2.1
         self.wheel_base = 0.3302
         self.Kp = 1.0
         self.flag = False
-        self.waypoint_sub = self.create_subscription(Marker, 'waypoints', self.waypoint_callback, 10)
+        # self.waypoint_sub = self.create_subscription(Marker, 'waypoints', self.waypoint_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
         self.marker_pub = self.create_publisher(Marker, 'start', 10)
         self.ack_drive_pub = self.create_publisher(AckermannDriveStamped, 'drive', 10)
         self.timer = self.create_timer(1.0, self.timer_callback)
+
+        map_name = "levine_closed"
+        self.csv_file = f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}.csv"
+        self.path = self.load_points_from_csv(self.csv_file)
     
-    def waypoint_callback(self, msg):
+    def load_points_from_csv(self, file_path):
+        points = []
         try:
-            # self.get_logger().info(f"Recieved {len(msg.points)} waypoints ...")
-            for i in range(len(msg.points)):
-                if len(self.path) != len(msg.points):
-                    self.path.append((msg.points[i].x, msg.points[i].y, msg.points[i].z))
+            with open(file_path, 'r') as csvfile:
+                file = csv.reader(csvfile)
+                for row in file:
+                    x, y, v = float(row[0]), float(row[1]), float(row[2])
+                    points.append((x, y, v))
         except Exception as e:
-            print(f"Failed to Recieve Waypoints: {e}")
+            self.get_logger().error(f"Error reading CSV: {e}")
+
+        return points
     
     def odom_callback(self, msg):
         try:
@@ -76,16 +84,16 @@ class SimplePurePursuit(Node):
         speed = min(2.0, lat_forceweight)
 
         # if (abs(angle) > 20.0 / 180.0 * np.pi):
-        #     drive.drive.speed = 0.5
+        #     speed = 0.5
         # elif (abs(angle) > 10.0 / 180.0 * np.pi):
-        #     drive.drive.speed = 1.0
+        #     speed = 1.5
         # else:
-        #     drive.drive.speed = 2.0
+        #     speed = 2.5
         
-        drive.drive.speed = speed
+        drive.drive.speed = speed 
             
         self.ack_drive_pub.publish(drive)
-        self.get_logger().info(f"Vehicle Speed: {angle, speed}")
+        self.get_logger().info(f"Vehicle Speed: {angle, speed, self.lookAheadDis}")
     
     def pt_to_pt_distance(self, pt1, pt2):
         dist = math.hypot(pt2[0]-pt1[0], pt2[1]-pt1[1])
@@ -107,8 +115,7 @@ class SimplePurePursuit(Node):
             if (self.lastFoundIndex > len(self.path) - 1):
                 self.lastFoundIndex = 0
         
-        goalPt = [self.path[self.lastFoundIndex][0], self.path[self.lastFoundIndex][1]]
-
+        goalPt = self.path[self.lastFoundIndex]
         dx = goalPt[0] - currentX
         dy = goalPt[1] - currentY
         goal_heading = math.atan2(dy, dx)
