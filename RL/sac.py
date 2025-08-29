@@ -5,9 +5,9 @@ from stable_baselines3.common.logger import configure
 
 from f1tenth_gym_ros.simple_rl import F110Gym
 
-exp_no = 2
+exp_no = 1
 exp_name = "obs_logs"
-prev_obstacle_type, obstacle_type="static_obstacles", "no_obstacles"
+prev_obstacle_type, obstacle_type="static_obstacles_2", "static_obstacles_3"
 prev_log_dir = f"logs/{exp_name}/SAC_F1Tenth_Exp{exp_no}/{prev_obstacle_type}1"
 log_dir = f"logs/{exp_name}/SAC_F1Tenth_Exp{exp_no}/{obstacle_type}"
 os.makedirs(log_dir, exist_ok=True)

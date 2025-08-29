@@ -38,6 +38,8 @@ def generate_launch_description():
     has_opp = config_dict['bridge']['ros__parameters']['num_agent'] > 1
     teleop = config_dict['bridge']['ros__parameters']['kb_teleop']
 
+    rviz_file = 'gym_bridge.rviz' if config_dict['bridge']['ros__parameters']['num_agent'] == 1 else "gym_bridge_opp.rviz"
+
     bridge_node = Node(
         package='f1tenth_gym_ros',
         executable='gym_bridge',
@@ -48,7 +50,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz',
-        arguments=['-d', os.path.join(get_package_share_directory('f1tenth_gym_ros'), 'launch', 'gym_bridge.rviz')]
+        arguments=['-d', os.path.join(get_package_share_directory('f1tenth_gym_ros'), 'launch', rviz_file)]
     )
     map_server_node = Node(
         package='nav2_map_server',

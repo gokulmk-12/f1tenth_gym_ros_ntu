@@ -24,7 +24,9 @@ class F110Gym(gym.Env):
         config = f"/sim_ws/src/f1tenth_gym_ros/config/{config_file}"
         self.config = yaml.safe_load(open(config, 'r'))
         self.config = self.config['bridge']['ros__parameters']
+        
         self.opp = is_opp
+        self.is_train = is_train
 
         self.lidar_dim = self.config['reduce_lidar_data']
         self.laser = np.zeros(self.lidar_dim)
@@ -33,8 +35,8 @@ class F110Gym(gym.Env):
         self.wheel_base = 0.3302
         self.Kp = 1.0
         self.flag, self.flag_opp = False, False
-        self.is_train = is_train
 
+        ## Gym Action Space Definition
         self.action_space = gym.spaces.Box(
             low=np.array([
                 self.config['steering_min'],
@@ -47,22 +49,27 @@ class F110Gym(gym.Env):
             dtype=np.float64
         )
 
+        ## Gym Observation Space Definition
         self.observation_space = gym.spaces.Box(
             low=-np.inf, high=np.inf, 
-            shape=(self.lidar_dim*2+103, ), dtype=np.float64
+            shape=(self.lidar_dim*2+3, ), dtype=np.float64
+            ## Current LiDAR Scan, Previous LiDAR Scan, Linear Vel X, Ang Vel Z, Min Time Vel X
         )
 
+        ## Publisher Definitions
         self.drive_pub = self.node.create_publisher(AckermannDriveStamped, '/drive', 10)
         self.reset_pub = self.node.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
 
         self.laser_event, self.ego_odom_event, self.opp_odom_event = Event(), Event(), Event()
         self.info = {}
+
         map_name = str(self.config['map_name'])
         self.csv_file = f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}.csv"
         self.img_file = f"/sim_ws/src/f1tenth_gym_ros/maps/{map_name}.png"
         self.map_yaml_file = f"/sim_ws/src/f1tenth_gym_ros/maps/{map_name}.yaml"
         self.points = self.load_points_from_csv(self.csv_file)
-        self.points_opp = self.load_points_from_csv(f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}.csv")
+        if is_opp:
+            self.points_opp = self.load_points_from_csv(f"/sim_ws/src/f1tenth_gym_ros/tracks/{map_name}_opp_ways.csv")
         self.map_img = np.array(Image.open(self.img_file).transpose(Image.FLIP_TOP_BOTTOM)).astype(np.float64)
         self.cut_region = 30
 
@@ -70,14 +77,28 @@ class F110Gym(gym.Env):
         self.map_resolution = self.map_config['resolution']
         self.map_origin = self.map_config['origin']
 
+        ## Subscriber Definitions
         self.node.create_subscription(Odometry, 'ego_racecar/odom', self.ego_odom_callback, 10)
         self.node.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
+
+        ## Publisher and Subscriber for Opp Racecar if present
         if self.opp:
             self.node.create_subscription(Odometry, 'opp_racecar/odom', self.opp_odom_callback, 10)
             self.opp_drive_pub = self.node.create_publisher(AckermannDriveStamped, '/opp_drive', 10)
         self.steps_until_next_pose = 0
+
+        self.forward_arc_deg = 30
+        self.deg_per_beam = 270. / self.lidar_dim
+        half_beams = int((self.forward_arc_deg / self.deg_per_beam) / 2)
+        self.forward_center = self.lidar_dim // 2
+        self.forward_slice = slice(self.forward_center - half_beams, self.forward_center + half_beams +1)
     
     def load_points_from_csv(self, file_path):
+        '''
+        Purpose: Load waypoints from CSV
+        Input: File path
+        Output: Bunch of Waypoints
+        '''
         points = []
         try:
             with open(file_path, 'r') as csvfile:
@@ -91,6 +112,11 @@ class F110Gym(gym.Env):
         return points
 
     def ego_odom_callback(self, msg):
+        '''
+        Purpose: Subscriber callback for ego racecar odometry
+        Input: ros2 odometry msg
+        Output: None
+        '''
         try:
             self.current_pos = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
             self.current_heading = euler_from_quaternion([msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w])[2]
@@ -104,6 +130,12 @@ class F110Gym(gym.Env):
             print(f"Failed to get current car pose, taking previous: {e}")
     
     def opp_odom_callback(self, msg):
+        '''
+        Purpose: Subscriber callback for opp racecar odometry
+        Input: ros2 odometry msg
+        Output: None
+        Active only when self.is_opp is set True
+        '''
         try:
             self.current_pos_opp = [msg.pose.pose.position.x, msg.pose.pose.position.y, msg.pose.pose.position.z]
             self.current_heading_opp = euler_from_quaternion([msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w])[2]
@@ -115,15 +147,32 @@ class F110Gym(gym.Env):
             print(f"Failed to get current car pose, taking previous: {e}")
     
     def scan_callback(self, msg):
+        '''
+        Purpose: Subscriber callback for ego racecar laserscan
+        Input: ros2 laserscan msg
+        Output: None
+        Run as an event 
+        '''
         scan = msg.ranges[180: -180]
         self.laser = np.array(self.process_lidar(scan))
 
         self.info['last_scan'] = self.info.get('current_scan', self.laser)
         self.info['current_scan'] = self.laser
+
+        front_scan = self.info['current_scan'][self.forward_slice]
+        front_min_idx_local = int(np.argmin(front_scan))
+        front_min = float(front_scan[front_min_idx_local])
+        self.info["front_min"] = front_min
         
         self.laser_event.set()
 
     def process_lidar(self, scan):
+        '''
+        Purpose: Process 1080 laserscans to lidar_dim using averaging method
+        Input: list of scans
+        Output: averaged scan data
+        Visit sim.yaml for more info 
+        '''
         max_distance= self.config['max_distance_norm']
         reduce_by = self.config['reduce_lidar_data']
 
@@ -143,22 +192,36 @@ class F110Gym(gym.Env):
         
         return lidar_avg
 
-    def _get_obs(self, info, speed, goalPt):
+    def _get_observations(self, info, speed, goalPt):
+        '''
+        Purpose: Gym RL style get observation function
+        Input: info dict, current speed of racecar, next goalPt
+        Output: array of observations for RL
+        '''
         map_img = self.get_map_region()
         obs = np.hstack([
                     info["last_scan"],      # Previous Lidar Scan
                     info["current_scan"],   # Current Lidar Scan
                     np.array(speed),        # Current Speed
                     np.array(goalPt[2]),    # Min Time Speed
-                    map_img,                # Cropped Image of Map around car
                 ])
         return obs
 
     def pt_to_pt_distance(self, pt1, pt2):
+        '''
+        Purpose: Find point-point euclidean distance
+        Input: 2 points
+        Output: euclidean distance
+        '''
         dist = math.hypot(pt2[0]-pt1[0], pt2[1]-pt1[1])
         return dist
     
     def run_pp(self, dlookahead=0):
+        '''
+        Purpose: Simple Pure Pursuit Algorithm for ego racecar
+        Input: None
+        Output: Next goalPt, Steering angle
+        '''
         currentX, currentY = self.current_pos[0], self.current_pos[1] 
         
         if not self.flag:
@@ -184,6 +247,11 @@ class F110Gym(gym.Env):
         return goalPt, angle
 
     def run_pp_opp(self, dlookahead=0):
+        '''
+        Purpose: Simple Pure Pursuit Algorithm for opp racecar
+        Input: None
+        Output: Next goalPt, Steering angle
+        '''
         currentX, currentY = self.current_pos_opp[0], self.current_pos_opp[1] 
         
         if not self.flag_opp:
@@ -208,16 +276,17 @@ class F110Gym(gym.Env):
         angle = self.Kp * (np.arctan(2.0 * self.wheel_base * sin_alpha)) / (self.lookAheadDis + dlookahead)
         return goalPt, angle
     
-    
     def _sample_new_pose(self):
+        '''
+        Purpose: Function to reset the agent to different start points, for generalization
+        Input: None
+        Output: Overwrite start position of the agent
+        '''
         new_pose = [
             [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-            # [5.0, 0.0, 0.0, 0.0, 0.0, 1.0], 
             [9.75, 4.63, 0.0, 0.0, 0.7, 0.714],
-            # [5.73, 8.86, 0.0, 0.0, 0.9999, 0.009],
             [-0.107, 8.97, 0.0, 0.0, 0.9999, 0.009],
-            [-8.768, 8.697, 0.0, 0.0, 0.9998, -0.017],
-            # [-13.768, 4.3916, 0.0, 0.0, 0.7103, -0.704]
+            # [-8.768, 8.697, 0.0, 0.0, 0.9998, -0.017],
         ]
         idx = np.random.randint(low=0, high=len(new_pose))
         print(f"Setting New Pose: {new_pose[idx][0], new_pose[idx][1]}")
@@ -225,6 +294,11 @@ class F110Gym(gym.Env):
         self.config['sx'], self.config['sy'], self.config['stheta'] = new_pose[idx][0], new_pose[idx][1], yaw
 
     def get_map_region(self):
+        '''
+        Purpose: Crop out map region around the current racecar location, for observation
+        Input: None
+        Output: Cut-Map image
+        '''
         current_x, current_y = (self.current_pos[0] - self.map_origin[0]) / self.map_resolution, (self.current_pos[1] - self.map_origin[1]) / self.map_resolution
         left, right = current_x - self.cut_region, current_x + self.cut_region
         upper, lower = current_y - self.cut_region, current_y + self.cut_region
@@ -237,9 +311,13 @@ class F110Gym(gym.Env):
         return cropped_img.flatten()
     
     def reset(self):
+        '''
+        Purpose: Gym-RL style reset the agent, set the car speed to 0, clear the events
+        Input: None
+        Output: Current observation
+        '''
         msg = PoseWithCovarianceStamped()
         sx, sy, yaw = self.config['sx'], self.config['sy'], self.config['stheta']
-        # _, _, yaw = euler_from_quaternion([0.0, 0.0, self.config['ori_z'], self.config['ori_w']])
         _, _, z, w = quaternion_from_euler(0., 0., yaw)
         self.pose = np.array([sx, sy, yaw])
         msg.pose.pose.position.x = sx
@@ -278,10 +356,15 @@ class F110Gym(gym.Env):
         }
 
         self.flag = False
-        obs = self._get_obs(self.info, self.speed, [0., 0., 0.])
+        obs = self._get_observations(self.info, self.speed, [0., 0., 0.])
         return obs
     
     def step(self, action):
+        '''
+        Purpose: Gym-RL style step forward the agent one time-step
+        Input: action from policy
+        Output: observation, reward, done, info
+        '''
         self.laser_event.clear()
         self.ego_odom_event.clear()
         if self.opp:
@@ -322,30 +405,61 @@ class F110Gym(gym.Env):
         if self.steps_until_next_pose % 10000 == 0:
             self._sample_new_pose()
         
-        obs = self._get_obs(self.info, self.speed, goalPt)
+        obs = self._get_observations(self.info, self.speed, goalPt)
         done = self._get_termination(self.info)
 
+        ### NOTE: Enable max step length only when training with Off-Policy RL algorithms
         if self.info["step"] > 1000 and self.is_train:
             print("Max episode length reached. Forcing reset.")
             done = True
 
-        reward = sum(self._get_reward(self.info, done).values())
+        reward = sum(self._get_reward(self.info, done, goalPt).values())
         return obs, reward, done, {}
     
-    def _get_reward(self, info, done):
+    def _get_reward(self, info, done, goalPt):
+        '''
+        Purpose: Gym-RL style reward function
+        Input: info dict and done
+        Output: dict of rewards
+        '''
+        d_clear = self.config.get("clear_path_dist", 1.0)
+        v = float(self.info["speed"][0])
+        v_opt = float(goalPt[2])
+
+        if self.info["front_min"] > d_clear:
+            v_track = -self.config.get("v_track_scale", 0.5) * (v - v_opt)**2
+            headway_term = 0.0
+        else:
+            gap = self.info["front_min"]
+            safe = self.config.get("safe_gap", 3.0)
+            headway_term = - self.config.get("headway_scale", 0.2) * max(0.0, safe - gap)
+            v_track = - self.config.get("v_track_close_scale", 0.1) * (v - min(v_opt, 2.0))**2
+
         return {
             'linvel_reward': info["speed"][0] * self.config['vel_norm'] * self.config['vel_reward_scale'],
             'current_laser_reward': min(list(info['current_scan'])) * self.config['current_lidar_reward_scale'],
             'termination': -20 if done else 0,
             'smoothness': -self.config["smoothness_scale"] * np.sum(np.square(self.info["current_action"] - self.info["last_action"])),
+            'speed_track': v_track,
+            'headway': headway_term
         }
     
     def _get_termination(self, info):
+        '''
+        Purpose: Gym-RL style for terminating the agent earlier
+        Input: info dict
+        Output: termination condition
+        '''
         current_scan_termination = np.min(info['current_scan']) < 0.013
         previous_scan_termination = np.min(info['last_scan']) < 0.015
         return current_scan_termination
     
     def close(self):
+        '''
+        Purpose: Destroy the ROS2 Node and shutdown rclpy
+        Input: None
+        Output: None
+        '''
         self.node.destroy_node()
         rclpy.shutdown()
 

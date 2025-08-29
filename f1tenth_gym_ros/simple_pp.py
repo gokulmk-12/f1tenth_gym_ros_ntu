@@ -18,7 +18,6 @@ class SimplePurePursuit(Node):
         self.wheel_base = 0.3302
         self.Kp = 1.0
         self.flag = False
-        # self.waypoint_sub = self.create_subscription(Marker, 'waypoints', self.waypoint_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, 'ego_racecar/odom', self.odom_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, 'scan', self.scan_callback, 10)
         self.marker_pub = self.create_publisher(Marker, 'start', 10)

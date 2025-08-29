@@ -11,8 +11,11 @@
   <xacro:property name="wheel_radius" value="0.0508" />
   <xacro:property name="wheel_length" value="0.0381" />
   <xacro:property name="laser_distance_from_base_link" value="0.275" />
+  <xacro:property name="camera_distance_from_base_link" value="0.335" />
   <xacro:property name="laser_height" value="0.05" />
   <xacro:property name="laser_radius" value="0.026" />
+  <xacro:property name="camera_height" value="0.05" />
+  <xacro:property name="camera_width" value="0.026" />
   <xacro:property name="car_name" value="ego_racecar" />
 
   <material name="black">
@@ -21,6 +24,10 @@
 
   <material name="blue">
     <color rgba="0.3 0.57 1. 1."/>
+  </material>
+
+  <material name="white">
+    <color rgba="0.9 0.9 1. 1."/>
   </material>
 
   <link name="${car_name}/base_link">
@@ -55,6 +62,21 @@
     <parent link="${car_name}/base_link"/> 
     <child link="${car_name}/imu_link"/>
   </joint>
+
+  <joint name="base_to_camera" type="fixed">
+    <parent link="${car_name}/base_link"/>
+    <child link="${car_name}/camera_link"/>
+    <origin xyz="${camera_distance_from_base_link} 0 ${height}" rpy="0 1.57075 0"/>
+  </joint>
+
+  <link name="${car_name}/camera_link">
+    <visual>
+      <geometry>
+        <box size="${camera_width} ${camera_height} 0.01"/>
+      </geometry>
+      <material name="white"/>
+    </visual>
+  </link>
 
   <joint name="$base_to_back_left_wheel" type="fixed">
     <parent link="${car_name}/base_link"/>
