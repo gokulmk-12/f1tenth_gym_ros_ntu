@@ -1,6 +1,9 @@
 # F1TENTH gym environment ROS2 communication bridge
 This is a containerized ROS communication bridge for the F1TENTH gym environment that turns it into a simulation in ROS2.
 
+# Videos
+Visit this [link](https://drive.google.com/drive/folders/1RMp3XNFU-OyIrURzH7ZhI1Ggcmpawvg-?usp=drive_link) to view some experimental simulation videos.
+
 # Installation
 
 ## Native on Ubuntu 20.04
